@@ -38,8 +38,8 @@ blue-green-deployment-on-aws/
 
 ## Implementation Plan
 
-- [] Create a simple NGINX webpage.
-- [] Build and test the Docker image locally.
+- [x] Create a simple NGINX webpage.
+- [x] Build and test the Docker image locally.
 - [] Create AWS infrastructure using Terraform.
 - [] Configure Amazon ECR to store container images.
 - [] Configure GitHub Actions with AWS OIDC authentication.
