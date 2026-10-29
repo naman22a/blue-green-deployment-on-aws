@@ -47,7 +47,7 @@ terraform init
 terraform apply
 ```
 
-After that, every push to `main` triggers the pipeline. Update `AWS_ROLE_ARN` and `AWS_REGION` in the workflow settings to match your account.
+After that, every push to `master` triggers the pipeline. Update `AWS_ROLE_ARN` and `AWS_REGION` in the workflow settings to match your account.
 
 ## The Pipeline
 
