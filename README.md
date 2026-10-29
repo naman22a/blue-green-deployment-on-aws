@@ -42,16 +42,16 @@ blue-green-deployment-on-aws/
 - [x] Build and test the Docker image locally.
 - [x] Create AWS infrastructure using Terraform.
 - [x] Configure Amazon ECR to store container images.
-- [] Configure GitHub Actions with AWS OIDC authentication.
-- [] Automate image builds and pushes.
+- [x] Configure GitHub Actions with AWS OIDC authentication.
+- [x] Automate image builds and pushes.
 - [x] Deploy the application using Amazon ECS.
 - [x] Configure an Application Load Balancer.
 - [x] Implement blue-green deployments.
-- [] Add deployment health checks and smoke tests.
-- [] Configure CloudWatch monitoring and alarms.
-- [] Test failed deployments and rollback.
-- [] Document the architecture and deployment process.
-- [] Destroy unused AWS resources to control costs.
+- [x] Add deployment health checks and smoke tests.
+- [x] Configure CloudWatch monitoring and alarms.
+- [x] Test failed deployments and rollback.
+- [x] Document the architecture and deployment process.
+- [x] Destroy unused AWS resources to control costs.
 
 ## Blue-Green Deployment Workflow
 
