@@ -88,3 +88,7 @@ cd terraform && terraform destroy
 - Gradual (canary) traffic shifting instead of a full cutover
 - Automated rollback triggered by CloudWatch alarms after the switch
 - HTTPS with ACM and a custom domain
+
+## LICENSE
+
+[MIT LICENSE](./LICENSE)
