@@ -54,6 +54,12 @@ resource "aws_ecs_service" "app" {
   launch_type                       = "FARGATE"
   health_check_grace_period_seconds = 30
 
+  # Stop retrying a broken deployment and roll back to the last working task definition
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   network_configuration {
     subnets          = data.aws_subnets.default.ids
     security_groups  = [aws_security_group.ecs.id]
