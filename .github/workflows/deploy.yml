@@ -1,0 +1,197 @@
+name: Deploy (blue-green)
+
+on:
+    push:
+        branches: [master]
+        paths: ['app/**', 'terraform/**', '.github/workflows/deploy.yml']
+    workflow_dispatch:
+
+# Never run two deployments at once (they share Terraform state)
+concurrency:
+    group: deploy
+    cancel-in-progress: false
+
+permissions:
+    id-token: write # needed for AWS OIDC login
+    contents: read
+
+env:
+    AWS_REGION: ${{ vars.AWS_REGION }}
+    ECR_REPOSITORY: blue-green-nginx # must match var.project_name in Terraform
+    TF_VERSION: 1.10.5
+
+jobs:
+    # 1) Build the custom NGINX image and push it to ECR
+    build:
+        runs-on: ubuntu-latest
+        outputs:
+            image_tag: ${{ steps.meta.outputs.tag }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: Login to ECR
+              id: ecr
+              uses: aws-actions/amazon-ecr-login@v2
+
+            - name: Set image tag (short commit SHA)
+              id: meta
+              run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+            - name: Build and push
+              run: |
+                  IMAGE="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }}"
+                  docker build --platform linux/amd64 \
+                    --build-arg RELEASE="${{ steps.meta.outputs.tag }}" \
+                    -t "$IMAGE" app
+                  docker push "$IMAGE"
+
+    # 2) Deploy the new image to the IDLE color and test it on port 8080
+    deploy_idle:
+        needs: build
+        runs-on: ubuntu-latest
+        outputs:
+            active: ${{ steps.colors.outputs.active }}
+            idle: ${{ steps.colors.outputs.idle }}
+        defaults:
+            run:
+                working-directory: terraform
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - uses: hashicorp/setup-terraform@v3
+              with:
+                  terraform_version: ${{ env.TF_VERSION }}
+                  terraform_wrapper: false # keeps `terraform output` clean for scripting
+
+            - name: Terraform init
+              run: |
+                  terraform init -input=false \
+                    -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+                    -backend-config="key=blue-green-nginx/terraform.tfstate" \
+                    -backend-config="region=${{ env.AWS_REGION }}" \
+                    -backend-config="use_lockfile=true"
+
+            - name: Detect active / idle color
+              id: colors
+              run: |
+                  ACTIVE=$(terraform output -raw active_color)
+                  if [ "$ACTIVE" = "blue" ]; then IDLE=green; else IDLE=blue; fi
+                  {
+                    echo "active=$ACTIVE"
+                    echo "idle=$IDLE"
+                    echo "blue_tag=$(terraform output -raw blue_image_tag)"
+                    echo "green_tag=$(terraform output -raw green_image_tag)"
+                  } >> "$GITHUB_OUTPUT"
+
+            - name: Deploy new image to idle color
+              env:
+                  ACTIVE: ${{ steps.colors.outputs.active }}
+                  IDLE: ${{ steps.colors.outputs.idle }}
+                  NEW_TAG: ${{ needs.build.outputs.image_tag }}
+                  CUR_BLUE: ${{ steps.colors.outputs.blue_tag }}
+                  CUR_GREEN: ${{ steps.colors.outputs.green_tag }}
+              run: |
+                  if [ "$IDLE" = "blue" ]; then
+                    BLUE_TAG="$NEW_TAG"; GREEN_TAG="$CUR_GREEN"
+                  else
+                    BLUE_TAG="$CUR_BLUE"; GREEN_TAG="$NEW_TAG"
+                  fi
+                  # active_color stays unchanged here, so live traffic is untouched
+                  terraform apply -auto-approve -input=false \
+                    -var="active_color=$ACTIVE" \
+                    -var="blue_image_tag=$BLUE_TAG" \
+                    -var="green_image_tag=$GREEN_TAG"
+
+            - name: Wait for idle service to become stable
+              env:
+                  IDLE: ${{ steps.colors.outputs.idle }}
+              run: |
+                  CLUSTER=$(terraform output -raw ecs_cluster_name)
+                  SERVICE=$(terraform output -json ecs_service_names | jq -r --arg c "$IDLE" '.[$c]')
+                  aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+
+            - name: Smoke test idle environment (port 8080)
+              env:
+                  EXPECTED: ${{ needs.build.outputs.image_tag }}
+              run: |
+                  TEST_URL=$(terraform output -raw test_url)
+                  for i in $(seq 1 20); do
+                    BODY=$(curl -s --max-time 5 "$TEST_URL" || true)
+                    echo "Attempt $i"
+                    if echo "$BODY" | grep -q "Release: $EXPECTED"; then
+                      echo "Idle environment is serving release $EXPECTED"
+                      exit 0
+                    fi
+                    sleep 10
+                  done
+                  echo "Smoke test failed: idle environment is not serving $EXPECTED - live traffic was NOT switched"
+                  exit 1
+
+    # 3) Switch live traffic to the new color (manual approval via the "production" environment)
+    switch:
+        needs: [build, deploy_idle]
+        runs-on: ubuntu-latest
+        environment: production
+        defaults:
+            run:
+                working-directory: terraform
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - uses: hashicorp/setup-terraform@v3
+              with:
+                  terraform_version: ${{ env.TF_VERSION }}
+                  terraform_wrapper: false
+
+            - name: Terraform init
+              run: |
+                  terraform init -input=false \
+                    -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+                    -backend-config="key=blue-green-nginx/terraform.tfstate" \
+                    -backend-config="region=${{ env.AWS_REGION }}" \
+                    -backend-config="use_lockfile=true"
+
+            - name: Switch traffic
+              env:
+                  NEW_ACTIVE: ${{ needs.deploy_idle.outputs.idle }}
+              run: |
+                  BLUE_TAG=$(terraform output -raw blue_image_tag)
+                  GREEN_TAG=$(terraform output -raw green_image_tag)
+                  terraform apply -auto-approve -input=false \
+                    -var="active_color=$NEW_ACTIVE" \
+                    -var="blue_image_tag=$BLUE_TAG" \
+                    -var="green_image_tag=$GREEN_TAG"
+
+            - name: Verify live URL
+              env:
+                  NEW_ACTIVE: ${{ needs.deploy_idle.outputs.idle }}
+                  OLD_ACTIVE: ${{ needs.deploy_idle.outputs.active }}
+                  EXPECTED: ${{ needs.build.outputs.image_tag }}
+              run: |
+                  LIVE_URL=$(terraform output -raw alb_dns_name)
+                  for i in $(seq 1 10); do
+                    BODY=$(curl -s --max-time 5 "$LIVE_URL" || true)
+                    echo "Attempt $i"
+                    if echo "$BODY" | grep -q "Release: $EXPECTED"; then
+                      echo "Live traffic is now on **$NEW_ACTIVE** serving $EXPECTED (previous: $OLD_ACTIVE). Run the Rollback workflow to revert." >> "$GITHUB_STEP_SUMMARY"
+                      exit 0
+                    fi
+                    sleep 6
+                  done
+                  echo "Live check failed - run the Rollback workflow"
+                  exit 1
