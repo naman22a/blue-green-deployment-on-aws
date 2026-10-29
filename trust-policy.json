@@ -12,7 +12,7 @@
                     "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
                 },
                 "StringLike": {
-                    "token.actions.githubusercontent.com:sub": "repo:naman22a/blue-green-deployment-on-aws:*"
+                    "token.actions.githubusercontent.com:sub": "repo:naman22a@71423632/blue-green-deployment-on-aws@1435488662:*"
                 }
             }
         }
