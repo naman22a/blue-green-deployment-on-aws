@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "project_name" {
   description = "Prefix used for naming all resources"
   type        = string
-  default     = "bluegreen-nginx"
+  default     = "blue-green-nginx"
 }
 
 variable "container_port" {

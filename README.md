@@ -44,9 +44,9 @@ blue-green-deployment-on-aws/
 - [x] Configure Amazon ECR to store container images.
 - [] Configure GitHub Actions with AWS OIDC authentication.
 - [] Automate image builds and pushes.
-- [] Deploy the application using Amazon ECS.
-- [] Configure an Application Load Balancer.
-- [] Implement blue-green deployments.
+- [x] Deploy the application using Amazon ECS.
+- [x] Configure an Application Load Balancer.
+- [x] Implement blue-green deployments.
 - [] Add deployment health checks and smoke tests.
 - [] Configure CloudWatch monitoring and alarms.
 - [] Test failed deployments and rollback.
