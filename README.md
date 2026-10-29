@@ -40,8 +40,8 @@ blue-green-deployment-on-aws/
 
 - [x] Create a simple NGINX webpage.
 - [x] Build and test the Docker image locally.
-- [] Create AWS infrastructure using Terraform.
-- [] Configure Amazon ECR to store container images.
+- [x] Create AWS infrastructure using Terraform.
+- [x] Configure Amazon ECR to store container images.
 - [] Configure GitHub Actions with AWS OIDC authentication.
 - [] Automate image builds and pushes.
 - [] Deploy the application using Amazon ECS.
