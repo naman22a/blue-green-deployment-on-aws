@@ -113,6 +113,7 @@ jobs:
                     -var="green_image_tag=$GREEN_TAG"
 
             - name: Wait for idle service to become stable
+              timeout-minutes: 5
               env:
                   IDLE: ${{ steps.colors.outputs.idle }}
               run: |
