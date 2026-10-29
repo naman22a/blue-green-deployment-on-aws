@@ -69,8 +69,6 @@ I intentionally deployed a broken version to confirm the safety net works. Healt
 
 ![Failed deployment](docs/images/06-failed-deploy.png)
 
-<!-- IMAGE 6: GitHub Actions run that FAILED at the health check / smoke test step -->
-
 ## Monitoring and Cost
 
 CloudWatch alarms watch for unhealthy targets and elevated error rates so a bad release is visible quickly. All resources are created by Terraform, so teardown is one command:
