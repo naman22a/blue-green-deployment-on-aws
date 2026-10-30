@@ -4,13 +4,127 @@ Zero-downtime deployments for an NGINX app on **Amazon ECS**, fully automated wi
 
 ## How It Works
 
-![Architecture](docs/images/01-architecture.png)
+```mermaid
+flowchart LR
+    %% CI/CD
+    subgraph CICD["CI/CD Pipeline"]
+        DEV["Developer"]
+        GH["GitHub Repository<br/>master branch"]
+        GA["GitHub Actions"]
+
+        BUILD["Build & Test<br/>Docker Image"]
+        AUTH["AWS OIDC<br/>Authentication"]
+
+        DEV --> GH
+        GH -->|"Push to master"| GA
+        GA --> AUTH
+        GA --> BUILD
+    end
+
+    %% AWS
+    subgraph AWS["AWS Cloud"]
+        subgraph REGISTRY["Container Registry"]
+            ECR[("Amazon ECR")]
+        end
+
+        subgraph COMPUTE["ECS Fargate"]
+            CLUSTER["ECS Cluster"]
+
+            BLUE["Blue Service<br/>Fargate Tasks"]
+            GREEN["Green Service<br/>Fargate Tasks"]
+
+            CLUSTER --> BLUE
+            CLUSTER --> GREEN
+        end
+
+        subgraph ROUTING["Application Load Balancer"]
+            LIVE["Listener :80<br/>Live Traffic"]
+            TEST["Listener :8080<br/>Testing Traffic"]
+
+            TG_BLUE["Blue Target Group"]
+            TG_GREEN["Green Target Group"]
+
+            LIVE -->|"Active color"| TG_BLUE
+            TEST -->|"Idle color"| TG_GREEN
+        end
+
+        CW["Amazon CloudWatch<br/>Logs & Alarms"]
+        STATE[("S3<br/>Terraform State")]
+    end
+
+    %% Deployment
+    AUTH -->|"Assume IAM Role"| AWS
+    BUILD -->|"Push Image"| ECR
+    ECR -->|"Pull Image"| BLUE
+    ECR -->|"Pull Image"| GREEN
+
+    GA -->|"Terraform Apply"| STATE
+    GA -->|"Deploy & Configure"| CLUSTER
+    GA -->|"Update Active Color"| LIVE
+
+    %% Routing
+    TG_BLUE --> BLUE
+    TG_GREEN --> GREEN
+
+    USERS["Users"] -->|"HTTP :80"| LIVE
+
+    GA -.->|"Smoke Test :8080"| TEST
+    BLUE -.-> CW
+    GREEN -.-> CW
+    LIVE -.-> CW
+
+    classDef ci fill:#242938,stroke:#8b9bb4,color:#fff
+    classDef aws fill:#fff0dc,stroke:#ed8b18,color:#222
+    classDef blue fill:#dbeafe,stroke:#2563eb,color:#111
+    classDef green fill:#dcfce7,stroke:#16a34a,color:#111
+
+    class DEV,GH,GA,BUILD,AUTH ci
+    class ECR,CLUSTER,LIVE,TEST,CW,STATE aws
+    class BLUE,TG_BLUE blue
+    class GREEN,TG_GREEN green
+```
 
 1. **Build:** GitHub Actions builds the Docker image and pushes it to Amazon ECR, authenticating to AWS through OIDC (no long-lived keys).
 2. **Deploy Green:** The new image is deployed to the idle environment while Blue keeps serving users.
 3. **Validate:** Health checks and smoke tests run against Green.
 4. **Shift traffic:** If checks pass, the Application Load Balancer switches traffic from Blue to Green.
 5. **Verify or roll back:** The pipeline confirms the release is healthy. If anything fails, traffic stays on (or returns to) Blue.
+
+## Deployment workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant D as Developer
+    participant GH as GitHub Actions
+    participant ECR as Amazon ECR
+    participant TF as Terraform
+    participant ECS as ECS Fargate
+    participant ALB as Load Balancer
+
+    D->>GH: Push to master
+    GH->>GH: Build Docker image
+    GH->>ECR: Push image (commit SHA)
+
+    GH->>TF: Deploy to idle environment
+    TF->>ECS: Update idle service
+    ECS->>ECR: Pull new image
+    ECS-->>TF: Service stable
+
+    GH->>ALB: Smoke test port 8080
+    ALB-->>GH: Verify new release
+
+    alt Smoke test successful
+        GH->>GH: Production approval
+        GH->>TF: Change active_color
+        TF->>ALB: Update port 80 listener
+        ALB-->>GH: New release is live
+    else Smoke test failed
+        GH->>GH: Stop deployment
+        Note over ALB: Existing active environment<br/>continues serving users
+    end
+```
 
 ## Tech Stack
 

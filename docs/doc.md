@@ -263,7 +263,7 @@ Then redeploy a good tag to the idle color.
 
 ### 9.1 Pre-flight checks in the repo
 
-- Default branch is `main` (`git branch -m master main`). `deploy.yml` triggers on pushes to `main`.
+- Default branch is `master`. `deploy.yml` triggers on pushes to `master`.
 - `ECR_REPOSITORY` in `deploy.yml` equals your `project_name` (`blue-green-nginx`).
 - The `key=` in the `-backend-config` lines of `deploy.yml` and `rollback.yml` equals the key in `backend.hcl`.
 - `terraform fmt -recursive` has been run (CI fails on unformatted code).
@@ -348,7 +348,7 @@ gh variable set TF_STATE_BUCKET --body "$STATE_BUCKET"
 Create the **production** environment: Settings → Environments → New environment → `production`.
 
 - **Required reviewers** (manual approval before traffic switches) is only available on public repos, or private repos on a paid plan. If the option is missing, the `switch` job simply runs without waiting.
-- Under **Deployment branches and tags**, restrict it to `main`.
+- Under **Deployment branches and tags**, restrict it to `master`.
 
 ### 9.5 First run
 
@@ -358,7 +358,7 @@ The first push triggers `deploy.yml`, so do 9.1 to 9.4 and section 7 (bootstrap)
 git remote add origin git@github.com:$GH_OWNER/$GH_REPO.git
 git add .
 git commit -m "Blue-green deployment pipeline"
-git push -u origin main
+git push -u origin master
 ```
 
 Watch it in the repo's **Actions** tab:
@@ -374,7 +374,7 @@ Actions → **Rollback (switch back to previous color)** → **Run workflow**. I
 
 ### 9.7 Test a failed deployment through the pipeline
 
-Commit a change that breaks the container (for example, a bad `CMD`) and push to `main`. Expected result: the smoke test on port 8080 fails, the `switch` job never runs, and live traffic stays on the old version.
+Commit a change that breaks the container (for example, a bad `CMD`) and push to `master`. Expected result: the smoke test on port 8080 fails, the `switch` job never runs, and live traffic stays on the old version.
 
 Note: with the ECS circuit breaker enabled, a failed deployment rolls the idle service back to its previous image, so `aws ecs wait services-stable` can still succeed. The SHA check in the smoke test is what catches this.
 
@@ -393,7 +393,7 @@ Note: with the ECS circuit breaker enabled, a failed deployment rolls the idle s
 | `Credentials could not be loaded`                            | `id-token: write` missing or `AWS_ROLE_ARN` secret not set (it must be a repository secret).                                                        |
 | `repository ... does not exist` in the build job             | `ECR_REPOSITORY` doesn't match `project_name`.                                                                                                      |
 | `terraform output` fails in `deploy_idle`                    | State key mismatch, so CI sees empty state. Or the bootstrap in section 7 wasn't done.                                                              |
-| Workflow doesn't start on push                               | Pushed to `master` instead of `main`, or the push didn't touch `app/`, `terraform/`, or the workflow file.                                          |
+| Workflow doesn't start on push                               | Pushed to `main` instead of `master`, or the push didn't touch `app/`, `terraform/`, or the workflow file.                                          |
 | No **Required reviewers** option                             | Private repo on a free plan. Make the repo public, or use a separate manual `workflow_dispatch` workflow for the switch.                            |
 
 To print the OIDC subject GitHub actually sends, temporarily add this step before `configure-aws-credentials`, then remove it:
